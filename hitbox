@@ -12,25 +12,24 @@ local function ApplyHitbox()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character then
 			local char = player.Character
-			local root = char:FindFirstChild("HumanoidRootPart")
 			local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+			local root = char:FindFirstChild("HumanoidRootPart")
 			local hum = char:FindFirstChildOfClass("Humanoid")
 			
 			if hum and hum.Health > 0 then
 				if root then
-					-- INI YANG PALING PENTING! RootPart HARUS diperbesar
 					root.Size = Vector3.new(HitboxSize, HitboxSize, HitboxSize)
-					root.Transparency = 0.5
+					root.Transparency = 0.7
 					root.Color = Color3.fromRGB(255, 215, 0)
 					root.Material = Enum.Material.Neon
-					root.CanCollide = true  -- HARUS true biar bisa di-hit
+					root.CanCollide = false
 				end
 				if torso then
 					torso.Size = Vector3.new(HitboxSize, HitboxSize, HitboxSize)
-					torso.Transparency = 0.5
+					torso.Transparency = 0.7
 					torso.Color = Color3.fromRGB(255, 215, 0)
 					torso.Material = Enum.Material.Neon
-					torso.CanCollide = true  -- HARUS true biar bisa di-hit
+					torso.CanCollide = false
 				end
 			end
 		end
@@ -41,8 +40,8 @@ local function ResetHitbox()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character then
 			local char = player.Character
-			local root = char:FindFirstChild("HumanoidRootPart")
 			local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+			local root = char:FindFirstChild("HumanoidRootPart")
 			
 			if root then
 				root.Size = Vector3.new(2, 2, 1)
