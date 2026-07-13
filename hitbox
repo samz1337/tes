@@ -2,10 +2,23 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
+-- ============ SETTINGS ============
 local HitboxEnabled = false
 local HitboxSize = 10
+local HitboxTransparency = 0.7
+local ESPEnabled = false
+local OutlineESP = false
+local NameESP = false
+local HealthESP = false
+local UIHidden = false
 
+-- ============ ESP STORAGE ============
+local ESPObjects = {}
+local ESPConnections = {}
+
+-- ============ HITBOX FUNCTION ============
 local function ApplyHitbox()
 	if not HitboxEnabled then return end
 	
@@ -19,17 +32,17 @@ local function ApplyHitbox()
 			if hum and hum.Health > 0 then
 				if root then
 					root.Size = Vector3.new(HitboxSize, HitboxSize, HitboxSize)
-					root.Transparency = 0.7
+					root.Transparency = HitboxTransparency
 					root.Color = Color3.fromRGB(255, 215, 0)
 					root.Material = Enum.Material.Neon
-					root.CanCollide = false
+					root.CanCollide = true
 				end
 				if torso then
 					torso.Size = Vector3.new(HitboxSize, HitboxSize, HitboxSize)
-					torso.Transparency = 0.7
+					torso.Transparency = HitboxTransparency
 					torso.Color = Color3.fromRGB(255, 215, 0)
 					torso.Material = Enum.Material.Neon
-					torso.CanCollide = false
+					torso.CanCollide = true
 				end
 			end
 		end
@@ -61,98 +74,603 @@ local function ResetHitbox()
 	end
 end
 
+-- ============ ESP FUNCTIONS ============
+local function CreateESP(player)
+	if not ESPEnabled then return end
+	if not player then return end
+	
+	local char = player.Character
+	if not char then return end
+	
+	local root = char:FindFirstChild("HumanoidRootPart")
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not root or not hum then return end
+	
+	if ESPObjects[player] then
+		for _, obj in ipairs(ESPObjects[player]) do
+			pcall(function() obj:Destroy() end)
+		end
+		ESPObjects[player] = nil
+	end
+	
+	if ESPConnections[player] then
+		pcall(function() ESPConnections[player]:Disconnect() end)
+		ESPConnections[player] = nil
+	end
+	
+	local objects = {}
+	
+	if OutlineESP then
+		local legL = char:FindFirstChild("Left Leg") or char:FindFirstChild("LeftLowerLeg")
+		local legR = char:FindFirstChild("Right Leg") or char:FindFirstChild("RightLowerLeg")
+		local armL = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftUpperArm")
+		local armR = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightUpperArm")
+		local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+		local head = char:FindFirstChild("Head")
+		
+		local parts = {root, torso, head, legL, legR, armL, armR}
+		
+		for _, part in ipairs(parts) do
+			if part and part.Parent then
+				local outline = Instance.new("BoxHandleAdornment")
+				outline.Size = part.Size + Vector3.new(0.2, 0.2, 0.2)
+				outline.Adornee = part
+				outline.Color3 = Color3.fromRGB(0, 255, 255)
+				outline.Transparency = 0.3
+				outline.ZIndex = 0
+				outline.AlwaysOnTop = true
+				outline.Parent = part
+				table.insert(objects, outline)
+				
+				local glow = Instance.new("BoxHandleAdornment")
+				glow.Size = part.Size + Vector3.new(0.5, 0.5, 0.5)
+				glow.Adornee = part
+				glow.Color3 = Color3.fromRGB(0, 150, 255)
+				glow.Transparency = 0.7
+				glow.ZIndex = 0
+				glow.AlwaysOnTop = true
+				glow.Parent = part
+				table.insert(objects, glow)
+			end
+		end
+	end
+	
+	if NameESP then
+		local nameTag = Instance.new("BillboardGui")
+		nameTag.Size = UDim2.new(0, 200, 0, 30)
+		nameTag.Adornee = root
+		nameTag.AlwaysOnTop = true
+		nameTag.MaxDistance = 500
+		nameTag.StudsOffset = Vector3.new(0, 4, 0)
+		nameTag.Parent = root
+		
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, 0, 1, 0)
+		label.BackgroundTransparency = 1
+		label.Text = player.Name
+		label.TextColor3 = Color3.fromRGB(0, 255, 255)
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = 14
+		label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+		label.TextStrokeTransparency = 0.3
+		label.Parent = nameTag
+		
+		table.insert(objects, nameTag)
+	end
+	
+	if HealthESP then
+		local healthTag = Instance.new("BillboardGui")
+		healthTag.Size = UDim2.new(0, 200, 0, 20)
+		healthTag.Adornee = root
+		healthTag.AlwaysOnTop = true
+		healthTag.MaxDistance = 500
+		healthTag.StudsOffset = Vector3.new(0, 3, 0)
+		healthTag.Parent = root
+		
+		local healthLabel = Instance.new("TextLabel")
+		healthLabel.Size = UDim2.new(1, 0, 1, 0)
+		healthLabel.BackgroundTransparency = 1
+		local health = math.round(hum.Health / hum.MaxHealth * 100)
+		healthLabel.Text = "HP: " .. health .. "%"
+		healthLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+		healthLabel.Font = Enum.Font.GothamBold
+		healthLabel.TextSize = 12
+		healthLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+		healthLabel.TextStrokeTransparency = 0.3
+		healthLabel.Parent = healthTag
+		
+		table.insert(objects, healthTag)
+		
+		local conn = hum:GetPropertyChangedSignal("Health"):Connect(function()
+			if not hum or not hum.Parent then return end
+			local newHealth = math.round(hum.Health / hum.MaxHealth * 100)
+			healthLabel.Text = "HP: " .. newHealth .. "%"
+			if newHealth > 60 then
+				healthLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+			elseif newHealth > 30 then
+				healthLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+			else
+				healthLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+			end
+		end)
+		ESPConnections[player] = conn
+	end
+	
+	ESPObjects[player] = objects
+end
+
+local function ClearESP()
+	for player, objects in pairs(ESPObjects) do
+		for _, obj in ipairs(objects) do
+			pcall(function() obj:Destroy() end)
+		end
+	end
+	ESPObjects = {}
+	
+	for player, conn in pairs(ESPConnections) do
+		pcall(function() conn:Disconnect() end)
+	end
+	ESPConnections = {}
+end
+
+local function UpdateESP()
+	ClearESP()
+	if not ESPEnabled then return end
+	
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			CreateESP(player)
+		end
+	end
+end
+
+-- ============ PLAYER CONNECTIONS ============
+local function OnCharacterAdded(player, character)
+	task.wait(0.5)
+	if ESPEnabled and player ~= LocalPlayer then
+		CreateESP(player)
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	local charConn
+	charConn = player.CharacterAdded:Connect(function(character)
+		OnCharacterAdded(player, character)
+	end)
+	
+	if player.Character then
+		task.wait(0.5)
+		if ESPEnabled and player ~= LocalPlayer then
+			CreateESP(player)
+		end
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	if ESPObjects[player] then
+		for _, obj in ipairs(ESPObjects[player]) do
+			pcall(function() obj:Destroy() end)
+		end
+		ESPObjects[player] = nil
+	end
+	if ESPConnections[player] then
+		pcall(function() ESPConnections[player]:Disconnect() end)
+		ESPConnections[player] = nil
+	end
+end)
+
+-- ============ RENDER LOOP ============
 RunService.RenderStepped:Connect(function()
 	if HitboxEnabled then
 		ApplyHitbox()
 	end
 end)
 
+-- ============ GUI ============
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AjnurHitboxHub"
+screenGui.Name = "ReyDevHub"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 220, 0, 155)
-frame.Position = UDim2.new(0.5, -110, 0.5, -77)
-frame.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+frame.Size = UDim2.new(0, 320, 0, 520)
+frame.Position = UDim2.new(0.5, -160, 0.5, -260)
+frame.BackgroundColor3 = Color3.fromRGB(10, 10, 30)
+frame.BackgroundTransparency = 0.05
 frame.Active = true
 frame.Draggable = true
 frame.Parent = screenGui
 
 local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
+corner.CornerRadius = UDim.new(0, 15)
 corner.Parent = frame
 
-local label = Instance.new("TextLabel")
-label.Size = UDim2.new(1, 0, 0, 35)
-label.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
-label.Text = "Ajnur Hub - Hitbox"
-label.TextColor3 = Color3.fromRGB(255, 215, 0)
-label.Font = Enum.Font.GothamBold
-label.TextSize = 12
-label.Parent = frame
+local border = Instance.new("Frame")
+border.Size = UDim2.new(1, 4, 1, 4)
+border.Position = UDim2.new(0, -2, 0, -2)
+border.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+border.BackgroundTransparency = 0.8
+border.BorderSizePixel = 0
+border.Parent = frame
 
-local corner2 = Instance.new("UICorner")
-corner2.CornerRadius = UDim.new(0, 8)
-corner2.Parent = label
+local borderCorner = Instance.new("UICorner")
+borderCorner.CornerRadius = UDim.new(0, 17)
+borderCorner.Parent = border
+
+local glass = Instance.new("Frame")
+glass.Size = UDim2.new(1, 0, 1, 0)
+glass.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+glass.BackgroundTransparency = 0.95
+glass.BorderSizePixel = 0
+glass.Parent = frame
+
+local glassCorner = Instance.new("UICorner")
+glassCorner.CornerRadius = UDim.new(0, 15)
+glassCorner.Parent = glass
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 50)
+titleBar.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+titleBar.BackgroundTransparency = 0.3
+titleBar.Parent = frame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 15)
+titleCorner.Parent = titleBar
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 1, 0)
+title.BackgroundTransparency = 1
+title.Text = "REYDEV HUB"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 20
+title.TextStrokeColor3 = Color3.fromRGB(0, 200, 255)
+title.TextStrokeTransparency = 0.5
+title.Parent = titleBar
+
+local subtitle = Instance.new("TextLabel")
+subtitle.Size = UDim2.new(1, 0, 0, 15)
+subtitle.Position = UDim2.new(0, 0, 1, -15)
+subtitle.BackgroundTransparency = 1
+subtitle.Text = "Premium Visuals"
+subtitle.TextColor3 = Color3.fromRGB(150, 200, 255)
+subtitle.Font = Enum.Font.Gotham
+subtitle.TextSize = 10
+subtitle.TextTransparency = 0.5
+subtitle.Parent = titleBar
+
+local sep = Instance.new("Frame")
+sep.Size = UDim2.new(0.9, 0, 0, 2)
+sep.Position = UDim2.new(0.05, 0, 0, 52)
+sep.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+sep.BackgroundTransparency = 0.3
+sep.Parent = frame
+
+local sepGlow = Instance.new("Frame")
+sepGlow.Size = UDim2.new(0.9, 0, 0, 8)
+sepGlow.Position = UDim2.new(0.05, 0, 0, 49)
+sepGlow.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+sepGlow.BackgroundTransparency = 0.9
+sepGlow.BorderSizePixel = 0
+sepGlow.Parent = frame
+
+-- ============ HITBOX SECTION ============
+local hitboxSection = Instance.new("Frame")
+hitboxSection.Size = UDim2.new(1, -20, 0, 120)
+hitboxSection.Position = UDim2.new(0, 10, 0, 60)
+hitboxSection.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+hitboxSection.BackgroundTransparency = 0.9
+hitboxSection.BorderSizePixel = 0
+hitboxSection.Parent = frame
+
+local secCorner = Instance.new("UICorner")
+secCorner.CornerRadius = UDim.new(0, 8)
+secCorner.Parent = hitboxSection
+
+local hitboxLabel = Instance.new("TextLabel")
+hitboxLabel.Size = UDim2.new(1, -20, 0, 25)
+hitboxLabel.Position = UDim2.new(0, 10, 0, 5)
+hitboxLabel.BackgroundTransparency = 1
+hitboxLabel.Text = "HITBOX EXPANDER"
+hitboxLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+hitboxLabel.Font = Enum.Font.GothamBold
+hitboxLabel.TextSize = 13
+hitboxLabel.TextXAlignment = Enum.TextXAlignment.Left
+hitboxLabel.Parent = hitboxSection
 
 local hitBtn = Instance.new("TextButton")
-hitBtn.Size = UDim2.new(0, 180, 0, 35)
-hitBtn.Position = UDim2.new(0, 20, 0, 55)
-hitBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-hitBtn.Text = "HITBOX EXPANDER [OFF]"
+hitBtn.Size = UDim2.new(0, 100, 0, 30)
+hitBtn.Position = UDim2.new(0, 10, 0, 40)
+hitBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+hitBtn.Text = "OFF"
 hitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 hitBtn.Font = Enum.Font.GothamBold
-hitBtn.TextSize = 11
-hitBtn.Parent = frame
+hitBtn.TextSize = 12
+hitBtn.Parent = hitboxSection
 
-local c1 = Instance.new("UICorner")
-c1.CornerRadius = UDim.new(0, 6)
-c1.Parent = hitBtn
+local hitBtnCorner = Instance.new("UICorner")
+hitBtnCorner.CornerRadius = UDim.new(0, 6)
+hitBtnCorner.Parent = hitBtn
+
+local sizeBtn = Instance.new("TextButton")
+sizeBtn.Size = UDim2.new(0, 80, 0, 30)
+sizeBtn.Position = UDim2.new(0, 120, 0, 40)
+sizeBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
+sizeBtn.Text = "SIZE:10"
+sizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+sizeBtn.Font = Enum.Font.GothamBold
+sizeBtn.TextSize = 11
+sizeBtn.Parent = hitboxSection
+
+local sizeBtnCorner = Instance.new("UICorner")
+sizeBtnCorner.CornerRadius = UDim.new(0, 6)
+sizeBtnCorner.Parent = sizeBtn
+
+local transBtn = Instance.new("TextButton")
+transBtn.Size = UDim2.new(0, 80, 0, 30)
+transBtn.Position = UDim2.new(0, 210, 0, 40)
+transBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
+transBtn.Text = "VIS:0.7"
+transBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+transBtn.Font = Enum.Font.GothamBold
+transBtn.TextSize = 11
+transBtn.Parent = hitboxSection
+
+local transBtnCorner = Instance.new("UICorner")
+transBtnCorner.CornerRadius = UDim.new(0, 6)
+transBtnCorner.Parent = transBtn
+
+local transLabel = Instance.new("TextLabel")
+transLabel.Size = UDim2.new(1, -20, 0, 15)
+transLabel.Position = UDim2.new(0, 10, 0, 80)
+transLabel.BackgroundTransparency = 1
+transLabel.Text = "Transparency: 0.1 | 0.3 | 0.5 | 0.7 | 1.0"
+transLabel.TextColor3 = Color3.fromRGB(150, 150, 200)
+transLabel.Font = Enum.Font.Gotham
+transLabel.TextSize = 9
+transLabel.TextXAlignment = Enum.TextXAlignment.Left
+transLabel.Parent = hitboxSection
+
+-- ============ ESP SECTION ============
+local espSection = Instance.new("Frame")
+espSection.Size = UDim2.new(1, -20, 0, 140)
+espSection.Position = UDim2.new(0, 10, 0, 195)
+espSection.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+espSection.BackgroundTransparency = 0.9
+espSection.BorderSizePixel = 0
+espSection.Parent = frame
+
+local secCorner2 = Instance.new("UICorner")
+secCorner2.CornerRadius = UDim.new(0, 8)
+secCorner2.Parent = espSection
+
+local espLabel = Instance.new("TextLabel")
+espLabel.Size = UDim2.new(1, -20, 0, 25)
+espLabel.Position = UDim2.new(0, 10, 0, 5)
+espLabel.BackgroundTransparency = 1
+espLabel.Text = "ESP VISUALS"
+espLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+espLabel.Font = Enum.Font.GothamBold
+espLabel.TextSize = 13
+espLabel.TextXAlignment = Enum.TextXAlignment.Left
+espLabel.Parent = espSection
+
+local espBtn = Instance.new("TextButton")
+espBtn.Size = UDim2.new(0, 100, 0, 30)
+espBtn.Position = UDim2.new(0, 10, 0, 40)
+espBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+espBtn.Text = "ESP OFF"
+espBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+espBtn.Font = Enum.Font.GothamBold
+espBtn.TextSize = 12
+espBtn.Parent = espSection
+
+local espBtnCorner = Instance.new("UICorner")
+espBtnCorner.CornerRadius = UDim.new(0, 6)
+espBtnCorner.Parent = espBtn
+
+local outlineBtn = Instance.new("TextButton")
+outlineBtn.Size = UDim2.new(0, 85, 0, 28)
+outlineBtn.Position = UDim2.new(0, 10, 0, 80)
+outlineBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
+outlineBtn.Text = "OUTLINE"
+outlineBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+outlineBtn.Font = Enum.Font.GothamBold
+outlineBtn.TextSize = 10
+outlineBtn.Parent = espSection
+
+local outlineCorner = Instance.new("UICorner")
+outlineCorner.CornerRadius = UDim.new(0, 4)
+outlineCorner.Parent = outlineBtn
+
+local nameBtn = Instance.new("TextButton")
+nameBtn.Size = UDim2.new(0, 85, 0, 28)
+nameBtn.Position = UDim2.new(0, 105, 0, 80)
+nameBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
+nameBtn.Text = "NAME"
+nameBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+nameBtn.Font = Enum.Font.GothamBold
+nameBtn.TextSize = 10
+nameBtn.Parent = espSection
+
+local nameCorner = Instance.new("UICorner")
+nameCorner.CornerRadius = UDim.new(0, 4)
+nameCorner.Parent = nameBtn
+
+local healthBtn = Instance.new("TextButton")
+healthBtn.Size = UDim2.new(0, 85, 0, 28)
+healthBtn.Position = UDim2.new(0, 200, 0, 80)
+healthBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
+healthBtn.Text = "HEALTH"
+healthBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+healthBtn.Font = Enum.Font.GothamBold
+healthBtn.TextSize = 10
+healthBtn.Parent = espSection
+
+local healthCorner = Instance.new("UICorner")
+healthCorner.CornerRadius = UDim.new(0, 4)
+healthCorner.Parent = healthBtn
+
+-- ============ HIDE UI BUTTON ============
+local hideBtn = Instance.new("TextButton")
+hideBtn.Size = UDim2.new(0, 120, 0, 30)
+hideBtn.Position = UDim2.new(0.5, -60, 1, -55)
+hideBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
+hideBtn.Text = "HIDE UI"
+hideBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+hideBtn.Font = Enum.Font.GothamBold
+hideBtn.TextSize = 12
+hideBtn.Parent = frame
+
+local hideBtnCorner = Instance.new("UICorner")
+hideBtnCorner.CornerRadius = UDim.new(0, 6)
+hideBtnCorner.Parent = hideBtn
+
+-- ============ FOOTER ============
+local footer = Instance.new("Frame")
+footer.Size = UDim2.new(1, -20, 0, 45)
+footer.Position = UDim2.new(0, 10, 1, -105)
+footer.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+footer.BackgroundTransparency = 0.9
+footer.BorderSizePixel = 0
+footer.Parent = frame
+
+local footerCorner = Instance.new("UICorner")
+footerCorner.CornerRadius = UDim.new(0, 8)
+footerCorner.Parent = footer
+
+local credit = Instance.new("TextLabel")
+credit.Size = UDim2.new(1, 0, 0, 20)
+credit.Position = UDim2.new(0, 0, 0, 2)
+credit.BackgroundTransparency = 1
+credit.Text = "Made by ReyDev"
+credit.TextColor3 = Color3.fromRGB(0, 255, 255)
+credit.Font = Enum.Font.GothamBold
+credit.TextSize = 12
+credit.Parent = footer
+
+local info = Instance.new("TextLabel")
+info.Size = UDim2.new(1, 0, 0, 15)
+info.Position = UDim2.new(0, 0, 0, 24)
+info.BackgroundTransparency = 1
+info.Text = "Press H to toggle UI"
+info.TextColor3 = Color3.fromRGB(150, 150, 200)
+info.Font = Enum.Font.Gotham
+info.TextSize = 9
+info.TextTransparency = 0.5
+info.Parent = footer
+
+-- ============ BUTTON FUNCTIONS ============
+local sizes = {5, 10, 15, 25, 40}
+local currentSizeIndex = 2
+
+local transValues = {0.1, 0.3, 0.5, 0.7, 1.0}
+local currentTransIndex = 4
 
 hitBtn.MouseButton1Click:Connect(function()
 	HitboxEnabled = not HitboxEnabled
 	if HitboxEnabled then
-		hitBtn.Text = "HITBOX EXPANDER [ON]"
-		hitBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+		hitBtn.Text = "ON"
+		hitBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+		ApplyHitbox()
 	else
-		hitBtn.Text = "HITBOX EXPANDER [OFF]"
-		hitBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+		hitBtn.Text = "OFF"
+		hitBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 		ResetHitbox()
 	end
 end)
-
-local sizeBtn = Instance.new("TextButton")
-sizeBtn.Size = UDim2.new(0, 180, 0, 35)
-sizeBtn.Position = UDim2.new(0, 20, 0, 100)
-sizeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-sizeBtn.Text = "HITBOX SIZE: 10"
-sizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-sizeBtn.Font = Enum.Font.GothamBold
-sizeBtn.TextSize = 11
-sizeBtn.Parent = frame
-
-local c2 = Instance.new("UICorner")
-c2.CornerRadius = UDim.new(0, 6)
-c2.Parent = sizeBtn
-
-local sizes = {5, 10, 15, 25, 40}
-local currentSizeIndex = 2
 
 sizeBtn.MouseButton1Click:Connect(function()
 	currentSizeIndex = currentSizeIndex + 1
 	if currentSizeIndex > #sizes then currentSizeIndex = 1 end
 	
 	HitboxSize = sizes[currentSizeIndex]
-	sizeBtn.Text = "HITBOX SIZE: " .. HitboxSize
+	sizeBtn.Text = "SIZE:" .. HitboxSize
 	if HitboxEnabled then
 		ApplyHitbox()
 	end
 end)
 
-UserInputService.InputBegan:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.Insert then
-		frame.Visible = not frame.Visible
+transBtn.MouseButton1Click:Connect(function()
+	currentTransIndex = currentTransIndex + 1
+	if currentTransIndex > #transValues then currentTransIndex = 1 end
+	
+	HitboxTransparency = transValues[currentTransIndex]
+	transBtn.Text = "VIS:" .. HitboxTransparency
+	if HitboxEnabled then
+		ApplyHitbox()
 	end
 end)
+
+espBtn.MouseButton1Click:Connect(function()
+	ESPEnabled = not ESPEnabled
+	if ESPEnabled then
+		espBtn.Text = "ESP ON"
+		espBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+		UpdateESP()
+	else
+		espBtn.Text = "ESP OFF"
+		espBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+		ClearESP()
+	end
+end)
+
+outlineBtn.MouseButton1Click:Connect(function()
+	OutlineESP = not OutlineESP
+	if OutlineESP then
+		outlineBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+		outlineBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	else
+		outlineBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
+		outlineBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+	end
+	if ESPEnabled then UpdateESP() end
+end)
+
+nameBtn.MouseButton1Click:Connect(function()
+	NameESP = not NameESP
+	if NameESP then
+		nameBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+		nameBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	else
+		nameBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
+		nameBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+	end
+	if ESPEnabled then UpdateESP() end
+end)
+
+healthBtn.MouseButton1Click:Connect(function()
+	HealthESP = not HealthESP
+	if HealthESP then
+		healthBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+		healthBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	else
+		healthBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
+		healthBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+	end
+	if ESPEnabled then UpdateESP() end
+end)
+
+-- ============ TOGGLE UI WITH H KEY ============
+local function ToggleUI()
+	UIHidden = not UIHidden
+	frame.Visible = not UIHidden
+	if frame.Visible then
+		hideBtn.Text = "HIDE UI"
+	else
+		hideBtn.Text = "SHOW UI"
+	end
+end
+
+hideBtn.MouseButton1Click:Connect(ToggleUI)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.H then
+		ToggleUI()
+	end
+end)
+
+print("ReyDev Hub Loaded Successfully!")
+print("Press H to toggle UI")
