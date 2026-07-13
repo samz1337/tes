@@ -468,10 +468,10 @@ titleCorner.Parent = titleBar
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 1, 0)
 title.BackgroundTransparency = 1
-title.Text = "REYDEV HUB"
+title.Text = "BY REY"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.Font = Enum.Font.GothamBold
-title.TextSize = 20
+title.TextSize = 24
 title.TextStrokeColor3 = Color3.fromRGB(255, 0, 0)
 title.TextStrokeTransparency = 0.5
 title.Parent = titleBar
@@ -742,10 +742,10 @@ local credit = Instance.new("TextLabel")
 credit.Size = UDim2.new(1, 0, 0, 20)
 credit.Position = UDim2.new(0, 0, 0, 2)
 credit.BackgroundTransparency = 1
-credit.Text = "90° reyDEV"
+credit.Text = "BY REY"
 credit.TextColor3 = Color3.fromRGB(255, 0, 0)
 credit.Font = Enum.Font.GothamBold
-credit.TextSize = 14
+credit.TextSize = 18
 credit.Parent = footer
 
 local info = Instance.new("TextLabel")
@@ -932,7 +932,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 print("==========================================")
-print("90° reyDEV")
+print("BY REY")
 print("@Reyzx303")
 print("ReyDev Hub Loaded Successfully!")
 print("Press H to toggle UI")
